@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Scanner;
 import java.util.stream.Collectors;
 import java.util.Map;
+import java.util.DoubleSummaryStatistics;
 
 /**
  * Clase principal que gestiona la interacción del usuario,
@@ -70,7 +71,7 @@ public class Principal {
                             datosGen.offset(), datosGen.limit());
 
                     detallesPokemon.clear();
-                    // Llama al método para cargar los datos de los Pokémon.
+                    // Llama al metodo para cargar los datos de los Pokémon.
                     cargarDetallesPokemon();
 
                     // Muestra el menú de opciones para la generación cargada.
@@ -97,10 +98,12 @@ public class Principal {
 
         DatosGeneracion generacionActual = getDatosGeneracionActual();
 
-        System.out.println("Cargando detalles de " + datos.conteo() + " Pokémons de la " + generacionActual.nombre());
+        // System.out.println("Cargando detalles de " + datos.conteo() + " Pokémons de la " + generacionActual.nombre());
 
         // 2. Usar un 'parallelStream' para llamar a la API por cada Pokémon simultáneamente.
         detallesPokemon = datos.nombresPokemon().parallelStream()
+                // peek: Útil para la depuración, permite ver qué Pokémon se está cargando.
+                //.peek(pokemon -> System.out.println("DEBUG: Cargando detalle de " + pokemon.nombre()))
                 .map(pokemon -> {
                     // Llama a la API para obtener el detalle de un Pokémon.
                     var jsonDetalle = consumoAPI.obtenerDatos(pokemon.url());
@@ -129,7 +132,7 @@ public class Principal {
                     4 - Top 5 más ataque base
                     5 - Top 5 más defensa base
                     6 - Top 5 más total de estadísticas base 
-                    7 - Promedios de altura y peso
+                    7 - Promedios y estadísticas de altura y peso 
                     8 - Promedio de ataque y defensa base 
                     
                     0 - Volver a Selección de Generación
@@ -205,21 +208,22 @@ public class Principal {
 
     /**
      * Calcula y muestra el promedio general de la suma de ataque y defensa base, dividido por 2.
+     * Utiliza {@code DoubleSummaryStatistics} para obtener todas las métricas (promedio, min, max, count)
+     * de cada campo en una sola pasada del Stream, mejorando la eficiencia.
      */
     private void mostrarPromedioAtaqueDefensa() {
         System.out.println("\n--- ⚔️ Promedio de ataque y defensa base ---");
 
-        // Calcula la suma de los promedios individuales (ataque + defensa) / 2 para cada Pokémon.
-        double sumaPromediosIndividuales = detallesPokemon.stream()
-                .mapToDouble(p -> {
+        // Usamos summarizingDouble para calcular el promedio de la métrica (ataque + defensa) / 2 en una sola pasada.
+        DoubleSummaryStatistics stats = detallesPokemon.stream()
+                .collect(Collectors.summarizingDouble(p -> {
                     double ataque = obtenerStatBase(p, "attack");
                     double defensa = obtenerStatBase(p, "defense");
                     return (ataque + defensa) / 2.0;
-                })
-                .sum();
+                }));
 
-        // Calcula el promedio general.
-        double promedioGeneral = sumaPromediosIndividuales / detallesPokemon.size();
+        // Obtenemos el promedio directamente de las estadísticas.
+        double promedioGeneral = stats.getAverage();
 
         System.out.printf("👉 Promedio General (ataque + defensa) / 2: %.2f\n", promedioGeneral);
         System.out.printf("\n(Calculado sobre %d Pokémons cargados)\n", detallesPokemon.size());
@@ -320,7 +324,7 @@ public class Principal {
         System.out.println("\n--- 💎 Top 5 Pokémon más total de estadísticas base ---");
 
         detallesPokemon.stream()
-                // Ordena usando el método 'calcularTotalEstadisticas' como criterio de comparación.
+                // Ordena usando el metodo 'calcularTotalEstadisticas' como criterio de comparación.
                 .sorted(Comparator.comparing(this::calcularTotalEstadisticas).reversed())
                 .limit(5)
                 .forEach(p -> {
@@ -330,25 +334,25 @@ public class Principal {
     }
 
     /**
-     * Calcula y muestra los promedios de altura y peso de todos los Pokémon cargados.
+     * Calcula y muestra los promedios, el mínimo y el máximo de altura y peso de todos los Pokémon cargados.
+     * Utiliza {@code DoubleSummaryStatistics} para obtener todas las métricas (promedio, min, max, count)
+     * de cada campo en una sola pasada del Stream, mejorando la eficiencia.
      */
     private void mostrarPromedios() {
-        System.out.println("\n--- 📏 Promedios de la muestra (" + detallesPokemon.size() + " Pokémons) ---");
+        System.out.println("\n--- 📏 Promedios y Estadísticas de la muestra (" + detallesPokemon.size() + " Pokémons) ---");
 
-        // Calcula el promedio de altura en metros.
-        double promedioAltura = detallesPokemon.stream()
-                .mapToDouble(DatosPokemonDetalle::getAlturaMetros)
-                .average() // Método para calcular el promedio de un DoubleStream.
-                .orElse(0.0);
+        // Usamos DoubleSummaryStatistics para obtener múltiples métricas en una sola pasada para la Altura.
+        DoubleSummaryStatistics statsAltura = detallesPokemon.stream()
+                .collect(Collectors.summarizingDouble(DatosPokemonDetalle::getAlturaMetros));
 
-        // Calcula el promedio de peso en kilogramos.
-        double promedioPeso = detallesPokemon.stream()
-                .mapToDouble(DatosPokemonDetalle::getPesoKilogramos)
-                .average()
-                .orElse(0.0);
+        // Usamos DoubleSummaryStatistics para obtener múltiples métricas en una sola pasada para el Peso.
+        DoubleSummaryStatistics statsPeso = detallesPokemon.stream()
+                .collect(Collectors.summarizingDouble(DatosPokemonDetalle::getPesoKilogramos));
 
-        System.out.printf("👉 Promedio de altura: %.2f metros\n", promedioAltura);
-        System.out.printf("👉 Promedio de peso:   %.2f kilogramos\n", promedioPeso);
+        System.out.printf("👉 Altura (Promedio): %.2f metros | Mínimo: %.2f m | Máximo: %.2f m\n",
+                statsAltura.getAverage(), statsAltura.getMin(), statsAltura.getMax());
+        System.out.printf("👉 Peso (Promedio):   %.2f kilogramos | Mínimo: %.2f kg | Máximo: %.2f kg\n",
+                statsPeso.getAverage(), statsPeso.getMin(), statsPeso.getMax());
         System.out.printf("\n(Calculado sobre %d Pokémons cargados)\n", detallesPokemon.size());
     }
 }
